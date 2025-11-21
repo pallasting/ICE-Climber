@@ -25,6 +25,12 @@ export enum EnemyType {
   BIRD = 'BIRD',
 }
 
+export enum ItemType {
+  EGGPLANT = 'EGGPLANT',
+  CARROT = 'CARROT',
+  CABBAGE = 'CABBAGE',
+}
+
 export interface Point {
   x: number;
   y: number;
@@ -63,6 +69,15 @@ export interface Block extends Point {
   biome: BiomeType;
 }
 
+export interface Item extends Point {
+  id: string;
+  type: ItemType;
+  width: number;
+  height: number;
+  collected: boolean;
+  floatOffset: number; // For bobbing animation
+}
+
 export interface Particle extends Point, Velocity {
   life: number;      // 0 to 1
   maxLife: number;
@@ -70,6 +85,15 @@ export interface Particle extends Point, Velocity {
   color: string;
   rotation: number;
   rotSpeed: number;
+  gravity: number;   // 0 for snow, >0 for shards
+  bounce: boolean;   // Should it bounce on floor?
+}
+
+export interface FloatingText extends Point, Velocity {
+  text: string;
+  life: number;
+  color: string;
+  size: number;
 }
 
 export interface Snowflake {

@@ -1,5 +1,5 @@
 
-import { GameConfig, BiomeType, BiomeConfig } from './types';
+import { GameConfig, BiomeType, BiomeConfig, ItemType } from './types';
 
 export const CANVAS_WIDTH = 600;
 export const CANVAS_HEIGHT = 800;
@@ -35,6 +35,18 @@ export const ENEMY_CONFIG = {
     speed: 2.2,
     color: '#f472b6',
   }
+};
+
+export const ITEM_CONFIG = {
+  [ItemType.EGGPLANT]: { points: 100, color: '#a855f7', width: 20, height: 20 },
+  [ItemType.CARROT]:   { points: 300, color: '#f97316', width: 20, height: 20 },
+  [ItemType.CABBAGE]:  { points: 500, color: '#22c55e', width: 22, height: 22 },
+};
+
+export const SHAKE_INTENSITY = {
+  SMALL: 0.3,  // Walking/Landing
+  MEDIUM: 0.6, // Breaking block
+  LARGE: 1.0,  // Getting hit
 };
 
 export const BIOME_CONFIG: Record<BiomeType, BiomeConfig> = {

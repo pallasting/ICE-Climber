@@ -2,11 +2,11 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { 
   CANVAS_WIDTH, CANVAS_HEIGHT, TILE_SIZE, PHYSICS, COLORS, 
-  COLS, PLAYER_SIZE, ENEMY_CONFIG, BIOME_CONFIG 
+  COLS, PLAYER_SIZE, ENEMY_CONFIG, BIOME_CONFIG, ITEM_CONFIG, SHAKE_INTENSITY 
 } from '../constants';
 import { 
   Block, BlockType, Entity, GameState, Particle, Snowflake, 
-  BiomeType, Enemy, EnemyType 
+  BiomeType, Enemy, EnemyType, Item, ItemType, FloatingText 
 } from '../types';
 
 interface GameRendererProps {
@@ -23,10 +23,6 @@ const GameRenderer: React.FC<GameRendererProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>(0);
   
-  // FIX: Stale Closure Issue. 
-  // We keep a ref to the latest setGameState function provided by App.tsx.
-  // This ensures that when we call it (e.g. on death), we are using the version
-  // that closes over the *current* score, allowing high scores to save correctly.
   const setGameStateRef = useRef(setGameState);
   useEffect(() => {
     setGameStateRef.current = setGameState;
@@ -40,6 +36,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
   const maxScrollRef = useRef<number>(0);
   const highestGenYRef = useRef<number>(0); 
   const scoreRef = useRef<number>(0);
+  const traumaRef = useRef<number>(0); // 0 to 1, controls screen shake
 
   // Entities
   const playerRef = useRef<Entity>({
@@ -59,17 +56,34 @@ const GameRenderer: React.FC<GameRendererProps> = ({
 
   const mapRef = useRef<Block[]>([]);
   const enemiesRef = useRef<Enemy[]>([]);
+  const itemsRef = useRef<Item[]>([]);
   const particlesRef = useRef<Particle[]>([]);
   const snowRef = useRef<Snowflake[]>([]);
+  const floatingTextsRef = useRef<FloatingText[]>([]);
 
   // --- HELPERS ---
+  const addTrauma = (amount: number) => {
+    traumaRef.current = Math.min(1.0, traumaRef.current + amount);
+  };
+
+  const spawnFloatingText = (x: number, y: number, text: string, color: string = 'white', size: number = 14) => {
+    floatingTextsRef.current.push({
+      x, y,
+      text,
+      life: 1.0,
+      vx: (Math.random() - 0.5) * 1,
+      vy: -2,
+      color,
+      size
+    });
+  };
+
   const getBiomeAtLevel = (level: number): BiomeType => {
     if (level >= BIOME_CONFIG[BiomeType.AURORA].startLevel) return BiomeType.AURORA;
     if (level >= BIOME_CONFIG[BiomeType.BLIZZARD].startLevel) return BiomeType.BLIZZARD;
     return BiomeType.ICE_CAVE;
   };
 
-  // Deterministic pseudo-random for consistent textures based on seed
   const pseudoRandom = (seed: number) => {
     const x = Math.sin(seed) * 10000;
     return x - Math.floor(x);
@@ -100,10 +114,9 @@ const GameRenderer: React.FC<GameRendererProps> = ({
     const difficulty = Math.min(1, level / 100);
     const gapChance = 0.25 + (difficulty * 0.2); 
     const unbreakableChance = 0.1 + (difficulty * 0.2);
-    
     const forcedGapIndex = Math.floor(Math.random() * (COLS - 2)) + 1;
 
-    // Enemy Spawning Logic
+    // Enemy & Item Logic
     const isSafeZone = level < 5;
     let maxEnemiesAllowed = 0;
     if (!isSafeZone) {
@@ -128,15 +141,11 @@ const GameRenderer: React.FC<GameRendererProps> = ({
       }
 
       if (col === forcedGapIndex || Math.random() < gapChance) {
-        // Spawn Enemy Chance
-        if (!isSafeZone && 
-            Math.random() < 0.08 && // Spawn chance
-            enemiesRef.current.length < maxEnemiesAllowed
-        ) {
+        // GAP: Chance for Enemies
+        if (!isSafeZone && Math.random() < 0.08 && enemiesRef.current.length < maxEnemiesAllowed) {
             const enemyType = Math.random() > 0.6 ? EnemyType.YETI : EnemyType.BIRD; 
             const config = ENEMY_CONFIG[enemyType];
             const spawnY = rowY - config.height;
-            
             enemiesRef.current.push({
                 x: col * TILE_SIZE,
                 y: spawnY, 
@@ -153,7 +162,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
                 type: enemyType,
                 patrolStart: 0,
                 patrolEnd: CANVAS_WIDTH,
-                spawnY: spawnY, // Store initial Y for Bird sine wave
+                spawnY: spawnY, 
                 isDead: false
             });
         }
@@ -172,6 +181,26 @@ const GameRenderer: React.FC<GameRendererProps> = ({
         health: 1,
         biome,
       });
+
+      // Chance to spawn Item on top of block
+      if (Math.random() < 0.15) {
+          const rand = Math.random();
+          let itemType = ItemType.EGGPLANT;
+          if (rand > 0.6) itemType = ItemType.CARROT;
+          if (rand > 0.9) itemType = ItemType.CABBAGE;
+
+          const iConfig = ITEM_CONFIG[itemType];
+          itemsRef.current.push({
+              id: `i-${col}-${rowY}`,
+              x: col * TILE_SIZE + (TILE_SIZE - iConfig.width)/2,
+              y: rowY - iConfig.height - 5,
+              type: itemType,
+              width: iConfig.width,
+              height: iConfig.height,
+              collected: false,
+              floatOffset: Math.random() * Math.PI * 2
+          });
+      }
     }
 
     return newBlocks;
@@ -197,10 +226,13 @@ const GameRenderer: React.FC<GameRendererProps> = ({
     maxScrollRef.current = 0;
     highestGenYRef.current = CANVAS_HEIGHT - TILE_SIZE;
     scoreRef.current = 0;
+    traumaRef.current = 0;
 
     mapRef.current = [];
     enemiesRef.current = [];
+    itemsRef.current = [];
     particlesRef.current = [];
+    floatingTextsRef.current = [];
 
     // Generate initial rows
     for (let i = 0; i < 8; i++) {
@@ -253,19 +285,38 @@ const GameRenderer: React.FC<GameRendererProps> = ({
   };
 
   const spawnParticles = (x: number, y: number, color: string) => {
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 6; i++) {
       particlesRef.current.push({
         x,
         y,
-        vx: (Math.random() - 0.5) * 10,
-        vy: (Math.random() - 0.5) * 10,
+        vx: (Math.random() - 0.5) * 12,
+        vy: (Math.random() - 1) * 10 - 2, // Upward bias
         life: 1.0,
         maxLife: 1.0,
-        size: Math.random() * 6 + 2,
+        size: Math.random() * 8 + 4,
         color: color,
         rotation: Math.random() * Math.PI,
-        rotSpeed: (Math.random() - 0.5) * 0.2,
+        rotSpeed: (Math.random() - 0.5) * 0.5,
+        gravity: 0.5,
+        bounce: true
       });
+    }
+    // Dust
+    for (let i = 0; i < 4; i++) {
+         particlesRef.current.push({
+            x: x + (Math.random() - 0.5) * 20,
+            y: y + (Math.random() - 0.5) * 20,
+            vx: (Math.random() - 0.5) * 4,
+            vy: (Math.random() - 0.5) * 4,
+            life: 0.6,
+            maxLife: 0.6,
+            size: Math.random() * 4,
+            color: 'rgba(255,255,255,0.5)',
+            rotation: 0,
+            rotSpeed: 0,
+            gravity: 0,
+            bounce: false
+         });
     }
   };
 
@@ -276,6 +327,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
     }
 
     spawnParticles(block.x + block.width/2, block.y + block.height/2, COLORS.iceBase);
+    addTrauma(SHAKE_INTENSITY.MEDIUM);
     mapRef.current.splice(blockIndex, 1);
     
     const points = 100;
@@ -286,6 +338,9 @@ const GameRenderer: React.FC<GameRendererProps> = ({
   const updatePhysics = (dt: number) => {
     const player = playerRef.current;
     const map = mapRef.current;
+
+    // Update Trauma
+    traumaRef.current = Math.max(0, traumaRef.current - 0.02);
 
     // --- 1. Apply Gravity & Friction ---
     const friction = player.isGrounded ? PHYSICS.friction : PHYSICS.airFriction;
@@ -366,6 +421,9 @@ const GameRenderer: React.FC<GameRendererProps> = ({
             player.isGrounded = true;
             player.lastGroundedTime = Date.now();
             player.state = Math.abs(player.vx) > 0.1 ? 'run' : 'idle';
+            
+            // Landing shake
+            if (player.vy > 10) addTrauma(SHAKE_INTENSITY.SMALL);
           }
         } else if (player.vy < 0) {
           // JUMPING / HEAD BONK
@@ -383,71 +441,72 @@ const GameRenderer: React.FC<GameRendererProps> = ({
         }
       }
     }
+
+    // --- 4. ITEM COLLECTION ---
+    for (let i = itemsRef.current.length - 1; i >= 0; i--) {
+        const item = itemsRef.current[i];
+        if (item.collected) continue;
+        
+        if (checkRectOverlap(player, item)) {
+            const config = ITEM_CONFIG[item.type];
+            item.collected = true;
+            scoreRef.current += config.points;
+            setScore(s => s + config.points);
+            spawnFloatingText(item.x, item.y, `+${config.points}`, config.color);
+            
+            // Particle burst on collect
+            for(let j=0; j<5; j++) {
+                particlesRef.current.push({
+                    x: item.x + item.width/2,
+                    y: item.y + item.height/2,
+                    vx: (Math.random()-0.5)*5, vy: (Math.random()-0.5)*5,
+                    life: 0.5, maxLife: 0.5, size: 3, color: config.color,
+                    rotation: 0, rotSpeed: 0, gravity: 0, bounce: false
+                });
+            }
+            itemsRef.current.splice(i, 1);
+        }
+    }
   };
 
   const updateEnemies = () => {
       enemiesRef.current.forEach((enemy) => {
           if (enemy.isDead) return;
-
-          // --- LOGIC SPLIT: BIRD VS YETI ---
           
           if (enemy.type === EnemyType.BIRD) {
-              // BIRD LOGIC (Sine Wave, Flying)
               enemy.x += enemy.vx;
-              
               const t = Date.now();
-              // Oscillation: Amplitude 20, Speed based on time
               enemy.y = enemy.spawnY + Math.sin(t * 0.005) * 15;
-
-              // Face direction
               if (enemy.vx > 0) enemy.facingRight = true;
               if (enemy.vx < 0) enemy.facingRight = false;
-
-              // Screen Bounds (Turn Around)
-              if (enemy.x <= 0 || enemy.x + enemy.width >= CANVAS_WIDTH) {
-                  enemy.vx *= -1;
-              }
-
-              // Birds ignore block collision (they fly)
+              if (enemy.x <= 0 || enemy.x + enemy.width >= CANVAS_WIDTH) enemy.vx *= -1;
 
           } else {
-              // YETI LOGIC (Gravity, Walking)
               enemy.vy += PHYSICS.gravity;
               enemy.x += enemy.vx;
               enemy.y += enemy.vy;
 
-              // Sprite direction
               if (enemy.vx > 0) enemy.facingRight = true;
               if (enemy.vx < 0) enemy.facingRight = false;
+              if (enemy.x <= 0 || enemy.x + enemy.width >= CANVAS_WIDTH) enemy.vx *= -1;
 
-              // X Collision with screen
-              if (enemy.x <= 0 || enemy.x + enemy.width >= CANVAS_WIDTH) {
-                  enemy.vx *= -1;
-              }
-
-              // Map Collision
               enemy.isGrounded = false;
               for (const block of mapRef.current) {
                   if (checkRectOverlap(enemy, block)) {
-                      // Landing
                       if (enemy.vy > 0 && (enemy.y + enemy.height - enemy.vy <= block.y + 10)) {
                           enemy.y = block.y - enemy.height;
                           enemy.vy = 0;
                           enemy.isGrounded = true;
-                      } 
-                      // Wall turn
-                      else if (Math.abs(enemy.vx) > 0) {
+                      } else if (Math.abs(enemy.vx) > 0) {
                           const overlapY = Math.min(enemy.y + enemy.height, block.y + block.height) - Math.max(enemy.y, block.y);
-                          if (overlapY > 5) {
-                              enemy.vx *= -1;
-                          }
+                          if (overlapY > 5) enemy.vx *= -1;
                       }
                   }
               }
           }
 
-          // Player Hit Check
           if (checkRectOverlap(playerRef.current, enemy)) {
+              addTrauma(SHAKE_INTENSITY.LARGE);
               setGameStateRef.current(GameState.GAME_OVER);
           }
       });
@@ -456,7 +515,6 @@ const GameRenderer: React.FC<GameRendererProps> = ({
   const updateCamera = () => {
     const player = playerRef.current;
     
-    // Generate logic
     const topGenThreshold = cameraYRef.current - CANVAS_HEIGHT;
     if (highestGenYRef.current > topGenThreshold) {
         for (let i = 0; i < 5; i++) {
@@ -466,22 +524,23 @@ const GameRenderer: React.FC<GameRendererProps> = ({
             mapRef.current.push(...newRow);
             highestGenYRef.current = y;
         }
-        mapRef.current = mapRef.current.filter(b => b.y < cameraYRef.current + CANVAS_HEIGHT * 1.5);
-        enemiesRef.current = enemiesRef.current.filter(e => e.y < cameraYRef.current + CANVAS_HEIGHT * 1.5);
+        // Cleanup entities off screen
+        const cleanupThreshold = cameraYRef.current + CANVAS_HEIGHT * 1.5;
+        mapRef.current = mapRef.current.filter(b => b.y < cleanupThreshold);
+        enemiesRef.current = enemiesRef.current.filter(e => e.y < cleanupThreshold);
+        itemsRef.current = itemsRef.current.filter(i => i.y < cleanupThreshold);
     }
 
-    // Smooth Follow
     const targetY = player.y - CANVAS_HEIGHT * 0.6;
     if (targetY < cameraYRef.current) {
         cameraYRef.current += (targetY - cameraYRef.current) * 0.1;
     }
 
-    // Death
     if (player.y > cameraYRef.current + CANVAS_HEIGHT + 50) {
+        addTrauma(SHAKE_INTENSITY.LARGE);
         setGameStateRef.current(GameState.GAME_OVER);
     }
     
-    // Score
     const currentAlt = Math.floor(Math.abs(Math.min(0, player.y)) / TILE_SIZE);
     if (currentAlt > maxScrollRef.current) {
         maxScrollRef.current = currentAlt;
@@ -495,7 +554,59 @@ const GameRenderer: React.FC<GameRendererProps> = ({
 
   // --- DRAWING ---
 
+  const drawItem = (ctx: CanvasRenderingContext2D, item: Item) => {
+      const t = Date.now() / 200;
+      const bob = Math.sin(t + item.floatOffset) * 3;
+      const config = ITEM_CONFIG[item.type];
+
+      ctx.save();
+      ctx.translate(item.x + item.width/2, item.y + item.height/2 + bob);
+      
+      // Shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.beginPath(); ctx.ellipse(0, 12 - bob, 6, 2, 0, 0, Math.PI*2); ctx.fill();
+
+      if (item.type === ItemType.EGGPLANT) {
+          ctx.fillStyle = config.color;
+          ctx.beginPath(); ctx.ellipse(0, 2, 8, 10, 0, 0, Math.PI*2); ctx.fill();
+          ctx.fillStyle = '#86efac'; // Stem
+          ctx.beginPath(); ctx.moveTo(-4, -6); ctx.quadraticCurveTo(0, -10, 4, -6); ctx.lineTo(0, -4); ctx.fill();
+          ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(2, -12); ctx.stroke();
+      } else if (item.type === ItemType.CARROT) {
+          ctx.fillStyle = config.color;
+          ctx.beginPath(); ctx.moveTo(-5, -6); ctx.lineTo(5, -6); ctx.lineTo(0, 10); ctx.fill();
+          ctx.fillStyle = '#22c55e';
+          ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(-3, -12); ctx.moveTo(0, -6); ctx.lineTo(3, -12); ctx.stroke();
+      } else if (item.type === ItemType.CABBAGE) {
+          ctx.fillStyle = config.color;
+          ctx.beginPath(); ctx.arc(0, 2, 9, 0, Math.PI*2); ctx.fill();
+          ctx.fillStyle = '#4ade80';
+          ctx.beginPath(); ctx.arc(-2, 0, 5, 0, Math.PI*2); ctx.fill();
+          ctx.beginPath(); ctx.arc(3, 3, 4, 0, Math.PI*2); ctx.fill();
+      }
+      
+      ctx.restore();
+  };
+
+  const drawFloatingTexts = (ctx: CanvasRenderingContext2D) => {
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 12px "Press Start 2P", monospace';
+      floatingTextsRef.current.forEach(ft => {
+          ctx.fillStyle = ft.color;
+          ctx.globalAlpha = ft.life;
+          ctx.fillText(ft.text, ft.x + 10, ft.y);
+          
+          // Outline
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = 'black';
+          ctx.strokeText(ft.text, ft.x + 10, ft.y);
+      });
+      ctx.globalAlpha = 1;
+  };
+
   const drawPlayer = (ctx: CanvasRenderingContext2D, p: Entity) => {
+    // ... (Previous drawPlayer code, kept simplified here for brevity, assume identical)
+    // I will perform a full paste of the previous drawPlayer to ensure no regression
     ctx.save();
     const cx = p.x + p.width / 2;
     const cy = p.y + p.height / 2;
@@ -831,7 +942,15 @@ const GameRenderer: React.FC<GameRendererProps> = ({
           ctx.rotate(p.rotation);
           ctx.fillStyle = p.color;
           ctx.globalAlpha = p.life;
-          ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size);
+          if (p.gravity > 0) {
+             // Shards
+             ctx.beginPath();
+             ctx.moveTo(-p.size, -p.size); ctx.lineTo(p.size, 0); ctx.lineTo(0, p.size);
+             ctx.fill();
+          } else {
+             // Dust
+             ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size);
+          }
           ctx.restore();
       });
   };
@@ -847,19 +966,51 @@ const GameRenderer: React.FC<GameRendererProps> = ({
         updateCamera();
         updateEnemies();
 
+        // Update Particles
         for (let i = particlesRef.current.length - 1; i >= 0; i--) {
             const p = particlesRef.current[i];
             p.x += p.vx;
             p.y += p.vy;
-            p.vy += 0.2;
+            if (p.gravity > 0) p.vy += p.gravity;
+            
+            // Simple floor bounce
+            if (p.bounce) {
+                 for (const block of mapRef.current) {
+                     if (p.x > block.x && p.x < block.x + block.width && p.y > block.y && p.y < block.y + block.height) {
+                         p.y = block.y;
+                         p.vy *= -0.5;
+                         p.vx *= 0.8;
+                         break;
+                     }
+                 }
+            } else {
+                p.vy += 0.1;
+            }
+
             p.rotation += p.rotSpeed;
-            p.life -= 0.02;
+            p.life -= 0.015;
             if (p.life <= 0) particlesRef.current.splice(i, 1);
+        }
+
+        // Update Floating Texts
+        for (let i = floatingTextsRef.current.length - 1; i >= 0; i--) {
+            const ft = floatingTextsRef.current[i];
+            ft.x += ft.vx;
+            ft.y += ft.vy;
+            ft.life -= 0.02;
+            if (ft.life <= 0) floatingTextsRef.current.splice(i, 1);
         }
     }
 
     ctx.save();
     
+    // TRAUMA SHAKE APPLY
+    const shakeC = traumaRef.current * traumaRef.current; // Non-linear falloff
+    const shakeMag = shakeC * 15; // Max 15px shake
+    const shakeX = (Math.random() - 0.5) * shakeMag;
+    const shakeY = (Math.random() - 0.5) * shakeMag;
+    ctx.translate(shakeX, shakeY);
+
     drawEnvironment(ctx);
     
     const currentBiome = getBiomeAtLevel(Math.floor(Math.abs(cameraYRef.current) / (TILE_SIZE * 4)));
@@ -872,18 +1023,20 @@ const GameRenderer: React.FC<GameRendererProps> = ({
         drawIceBlock(ctx, block);
     });
 
+    itemsRef.current.forEach(item => {
+        if (item.y > cameraYRef.current + CANVAS_HEIGHT || item.y + item.height < cameraYRef.current) return;
+        drawItem(ctx, item);
+    });
+
     enemiesRef.current.forEach(enemy => {
         if (enemy.isDead) return;
-        
-        if (enemy.type === EnemyType.YETI) {
-            drawYeti(ctx, enemy);
-        } else {
-            drawBird(ctx, enemy);
-        }
+        if (enemy.type === EnemyType.YETI) drawYeti(ctx, enemy);
+        else drawBird(ctx, enemy);
     });
 
     drawParticles(ctx);
     drawPlayer(ctx, playerRef.current);
+    drawFloatingTexts(ctx);
 
     ctx.restore();
     
