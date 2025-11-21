@@ -1,0 +1,5 @@
+{
+  "name": "Ice Climber: React Remaster",
+  "description": "A web-based recreation of the NES classic Ice Climber. Features slippery ice physics, vertical scrolling, and block destruction mechanics.",
+  "requestFramePermissions": []
+}
