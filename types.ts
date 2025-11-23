@@ -3,8 +3,9 @@ export enum BlockType {
   EMPTY = 0,
   NORMAL = 1,
   UNBREAKABLE = 2,
-  CLOUD = 3,
+  CLOUD = 3,    // Moving platform
   SLIPPERY = 4, // High friction/ice
+  SPIKE = 5,    // Instant death
 }
 
 export enum BiomeType {
@@ -18,6 +19,7 @@ export enum GameState {
   PLAYING = 'PLAYING',
   GAME_OVER = 'GAME_OVER',
   VICTORY = 'VICTORY',
+  SHOP = 'SHOP',
 }
 
 export enum EnemyType {
@@ -29,6 +31,18 @@ export enum ItemType {
   EGGPLANT = 'EGGPLANT',
   CARROT = 'CARROT',
   CABBAGE = 'CABBAGE',
+}
+
+export enum UpgradeType {
+  SPIKED_BOOTS = 'SPIKED_BOOTS',
+  FEATHERWEIGHT = 'FEATHERWEIGHT',
+  POWER_HAMMER = 'POWER_HAMMER',
+}
+
+export interface Upgrades {
+  [UpgradeType.SPIKED_BOOTS]: boolean;
+  [UpgradeType.FEATHERWEIGHT]: boolean;
+  [UpgradeType.POWER_HAMMER]: boolean;
 }
 
 export interface Point {
@@ -48,8 +62,12 @@ export interface Entity extends Point, Velocity {
   isGrounded: boolean;
   lastGroundedTime: number; // For Coyote Time
   facingRight: boolean;
-  state: 'idle' | 'run' | 'jump' | 'hit' | 'fall';
+  state: 'idle' | 'run' | 'jump' | 'hit' | 'fall' | 'build';
   hitCooldown: number;
+  // Combat State
+  isAttacking: boolean;
+  attackTimer: number; // How long hitbox is active
+  attackCooldown: number;
 }
 
 export interface Enemy extends Entity {
@@ -58,6 +76,24 @@ export interface Enemy extends Entity {
   patrolEnd: number;
   spawnY: number; // Reference Y for flying enemies
   isDead: boolean;
+  // AI State
+  state: 'idle' | 'run' | 'jump' | 'hit' | 'fall' | 'build';
+  buildTimer: number;
+}
+
+export interface Boss extends Entity {
+  hp: number;
+  maxHp: number;
+  isActive: boolean;
+  phase: number; // 0: Idle, 1: Attack
+  moveTimer: number;
+}
+
+export interface Projectile extends Entity {
+  id: number;
+  isReflected: boolean; // True if player hit it back
+  damage: number;
+  rotation: number;
 }
 
 export interface Block extends Point {
@@ -67,6 +103,7 @@ export interface Block extends Point {
   type: BlockType;
   health: number;
   biome: BiomeType;
+  vx?: number; // For moving blocks (clouds)
 }
 
 export interface Item extends Point {

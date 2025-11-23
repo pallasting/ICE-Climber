@@ -1,5 +1,5 @@
 
-import { GameConfig, BiomeType, BiomeConfig, ItemType } from './types';
+import { GameConfig, BiomeType, BiomeConfig, ItemType, UpgradeType } from './types';
 
 export const CANVAS_WIDTH = 600;
 export const CANVAS_HEIGHT = 800;
@@ -28,6 +28,7 @@ export const ENEMY_CONFIG = {
     height: 30,
     speed: 1.2,
     color: '#e2e8f0',
+    buildTime: 60, // Frames to build a block
   },
   BIRD: {
     width: 28,
@@ -37,10 +38,53 @@ export const ENEMY_CONFIG = {
   }
 };
 
+export const BOSS_CONFIG = {
+  LEVEL: 19,
+  WIDTH: 80,
+  HEIGHT: 80,
+  HP: 300,
+  SPEED: 2,
+  ATTACK_INTERVAL: 120, // Frames
+  COLOR: '#818cf8'
+};
+
+export const PROJECTILE_CONFIG = {
+  WIDTH: 15,
+  HEIGHT: 40,
+  SPEED: 6,
+  REFLECT_SPEED: 18,
+};
+
+export const CLOUD_CONFIG = {
+    SPEED: 1.5,
+    COLOR: 'rgba(255, 255, 255, 0.9)',
+};
+
 export const ITEM_CONFIG = {
-  [ItemType.EGGPLANT]: { points: 100, color: '#a855f7', width: 20, height: 20 },
-  [ItemType.CARROT]:   { points: 300, color: '#f97316', width: 20, height: 20 },
-  [ItemType.CABBAGE]:  { points: 500, color: '#22c55e', width: 22, height: 22 },
+  [ItemType.EGGPLANT]: { points: 100, heat: 10, color: '#a855f7', width: 20, height: 20 },
+  [ItemType.CARROT]:   { points: 300, heat: 25, color: '#f97316', width: 20, height: 20 },
+  [ItemType.CABBAGE]:  { points: 500, heat: 50, color: '#22c55e', width: 22, height: 22 },
+};
+
+export const UPGRADE_CONFIG = {
+  [UpgradeType.SPIKED_BOOTS]: {
+    name: "Spiked Boots",
+    desc: "Better grip on ice. Reduce sliding.",
+    cost: 150,
+    icon: "👢"
+  },
+  [UpgradeType.FEATHERWEIGHT]: {
+    name: "Featherweight",
+    desc: "Low gravity suit. Jump higher, fall slower.",
+    cost: 250,
+    icon: "🪶"
+  },
+  [UpgradeType.POWER_HAMMER]: {
+    name: "Power Hammer",
+    desc: "Smash enemies with ease.",
+    cost: 400,
+    icon: "🔨"
+  }
 };
 
 export const SHAKE_INTENSITY = {
@@ -75,7 +119,6 @@ export const BIOME_CONFIG: Record<BiomeType, BiomeConfig> = {
   }
 };
 
-// Visuals
 export const COLORS = {
   iceBase: '#06b6d4',
   iceHighlight: '#a5f3fc',
