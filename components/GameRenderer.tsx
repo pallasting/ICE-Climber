@@ -7,7 +7,7 @@ import {
 } from '../constants';
 import { 
   Block, BlockType, Entity, GameState, Particle, Snowflake, 
-  BiomeType, Enemy, EnemyType, Item, ItemType, FloatingText, Upgrades, UpgradeType, Boss, Projectile
+  BiomeType, Enemy, EnemyType, Item, ItemType, FloatingText, Upgrades, UpgradeType, Boss, Projectile, ComboState
 } from '../types';
 import { audioManager } from '../utils/audio';
 
@@ -44,6 +44,10 @@ const GameRenderer: React.FC<GameRendererProps> = ({
   const traumaRef = useRef<number>(0); // 0 to 1, controls screen shake
   const lastShopLevelRef = useRef<number>(0); // Track last level we visited shop
   const windOffsetRef = useRef<number>(0); // For blizzard visuals
+  
+  // JUICE States
+  const hitStopRef = useRef<number>(0); // Frames to freeze physics
+  const comboRef = useRef<ComboState>({ count: 0, timer: 0, multiplier: 1 });
 
   // Entities
   const playerRef = useRef<Entity>({
@@ -62,6 +66,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
     isAttacking: false,
     attackTimer: 0,
     attackCooldown: 0,
+    rotation: 0
   });
 
   const mapRef = useRef<Block[]>([]);
@@ -100,6 +105,31 @@ const GameRenderer: React.FC<GameRendererProps> = ({
   // --- HELPERS ---
   const addTrauma = (amount: number) => {
     traumaRef.current = Math.min(1.0, traumaRef.current + amount);
+  };
+  
+  const triggerHitStop = (frames: number) => {
+      hitStopRef.current = frames;
+  };
+  
+  const incrementCombo = (x: number, y: number) => {
+      comboRef.current.count++;
+      comboRef.current.timer = 120; // 2 seconds
+      comboRef.current.multiplier = Math.min(5, 1 + (comboRef.current.count * 0.1));
+      
+      if (comboRef.current.count > 1) {
+          spawnFloatingText(x, y - 20, `${comboRef.current.count}x COMBO!`, '#fcd34d', 16);
+      }
+      return comboRef.current.multiplier;
+  };
+  
+  const triggerPlayerDeath = () => {
+      if (playerRef.current.state === 'die') return;
+      playerRef.current.state = 'die';
+      playerRef.current.vy = -12; // Pop up
+      playerRef.current.isGrounded = false;
+      addTrauma(SHAKE_INTENSITY.LARGE);
+      audioManager.playHurt();
+      // Don't set GAME_OVER yet, wait for fall
   };
 
   const spawnFloatingText = (x: number, y: number, text: string, color: string = 'white', size: number = 14) => {
@@ -372,6 +402,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
       isAttacking: false,
       attackTimer: 0,
       attackCooldown: 0,
+      rotation: 0
     };
 
     // Reset Boss
@@ -404,6 +435,8 @@ const GameRenderer: React.FC<GameRendererProps> = ({
     scoreRef.current = 0;
     traumaRef.current = 0;
     lastShopLevelRef.current = 0;
+    hitStopRef.current = 0;
+    comboRef.current = { count: 0, timer: 0, multiplier: 1 };
 
     mapRef.current = [];
     enemiesRef.current = [];
@@ -508,12 +541,15 @@ const GameRenderer: React.FC<GameRendererProps> = ({
     // Cannot break clouds or spikes from below
     if (block.type === BlockType.CLOUD || block.type === BlockType.SPIKE) return;
     
+    const mult = incrementCombo(block.x + block.width/2, block.y);
+
     spawnParticles(block.x + block.width/2, block.y + block.height/2, COLORS.iceBase);
     addTrauma(SHAKE_INTENSITY.MEDIUM);
     audioManager.playBreak();
+    triggerHitStop(3); // 3 frames freeze
     mapRef.current.splice(blockIndex, 1);
     
-    const points = 100;
+    const points = Math.floor(100 * mult);
     scoreRef.current += points;
     setScore(s => s + points);
   };
@@ -521,6 +557,20 @@ const GameRenderer: React.FC<GameRendererProps> = ({
   const updatePhysics = (dt: number) => {
     const player = playerRef.current;
     
+    // Death Logic
+    if (player.state === 'die') {
+        player.vy += PHYSICS.gravity;
+        player.y += player.vy;
+        player.x += player.vx;
+        player.rotation = (player.rotation || 0) + 0.2;
+        
+        // Check dead zone
+        if (player.y > cameraYRef.current + CANVAS_HEIGHT + 200) {
+            setGameStateRef.current(GameState.GAME_OVER);
+        }
+        return;
+    }
+
     // Determine Current Biome and apply Environmental Effects
     const currentLevel = Math.floor(Math.abs(Math.min(0, player.y)) / TILE_SIZE);
     const biome = getBiomeAtLevel(currentLevel);
@@ -591,9 +641,11 @@ const GameRenderer: React.FC<GameRendererProps> = ({
                     spawnParticles(enemy.x + enemy.width/2, enemy.y + enemy.height/2, enemy.color);
                     addTrauma(SHAKE_INTENSITY.MEDIUM);
                     audioManager.playEnemyHit();
+                    triggerHitStop(5);
                     
-                    const points = 500;
-                    const heatGain = 20;
+                    const mult = incrementCombo(enemy.x, enemy.y);
+                    const points = Math.floor(500 * mult);
+                    const heatGain = Math.floor(20 * mult);
                     scoreRef.current += points;
                     setScore(s => s + points);
                     setHeat(h => h + heatGain);
@@ -611,6 +663,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
                     proj.vx = (Math.random() - 0.5) * 2;
                     proj.color = '#ef4444'; // Turn red
                     audioManager.playEnemyHit(); // reused sound
+                    triggerHitStop(4);
                     addTrauma(SHAKE_INTENSITY.MEDIUM);
                     spawnFloatingText(proj.x, proj.y, "REFLECT!", "#3b82f6", 12);
                 }
@@ -665,6 +718,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
         setBossStatus({ active: false, hp: 0, maxHp: boss.maxHp });
         spawnParticles(boss.x + boss.width/2, boss.y + boss.height/2, boss.color);
         addTrauma(SHAKE_INTENSITY.LARGE);
+        triggerHitStop(10);
         // Spawn rewards
         for(let i=0; i<10; i++) {
              itemsRef.current.push({
@@ -696,14 +750,13 @@ const GameRenderer: React.FC<GameRendererProps> = ({
                  audioManager.playBreak();
                  projectilesRef.current.splice(i, 1);
                  spawnFloatingText(boss.x + boss.width/2, boss.y, "-50", "#ef4444", 20);
+                 triggerHitStop(4);
                  continue;
              }
         } else {
              // Check collision with Player
              if (checkRectOverlap(p, player)) {
-                 addTrauma(SHAKE_INTENSITY.LARGE);
-                 audioManager.playHurt();
-                 setGameStateRef.current(GameState.GAME_OVER);
+                 triggerPlayerDeath();
              }
         }
         
@@ -781,9 +834,8 @@ const GameRenderer: React.FC<GameRendererProps> = ({
     for (const block of mapRef.current) {
       if (checkRectOverlap(player, block)) {
         if (block.type === BlockType.SPIKE) {
-            addTrauma(SHAKE_INTENSITY.LARGE);
-            audioManager.playHurt();
-            setGameStateRef.current(GameState.GAME_OVER);
+            triggerPlayerDeath();
+            return;
         }
         
         // Cloud allow side entry? No, treat solid for now or jump through?
@@ -811,9 +863,8 @@ const GameRenderer: React.FC<GameRendererProps> = ({
       const block = mapRef.current[i];
       if (checkRectOverlap(player, block)) {
         if (block.type === BlockType.SPIKE) {
-            addTrauma(SHAKE_INTENSITY.LARGE);
-            audioManager.playHurt();
-            setGameStateRef.current(GameState.GAME_OVER);
+            triggerPlayerDeath();
+            return;
         }
 
         const overlapX = Math.min(player.x + player.width, block.x + block.width) - Math.max(player.x, block.x);
@@ -861,8 +912,11 @@ const GameRenderer: React.FC<GameRendererProps> = ({
         if (checkRectOverlap(player, item)) {
             const config = ITEM_CONFIG[item.type];
             item.collected = true;
-            scoreRef.current += config.points;
-            setScore(s => s + config.points);
+            const mult = incrementCombo(item.x, item.y);
+            const points = Math.floor(config.points * mult);
+            
+            scoreRef.current += points;
+            setScore(s => s + points);
             setHeat(h => h + config.heat);
             spawnFloatingText(item.x, item.y, `+${config.heat}🔥`, '#fcd34d');
             audioManager.playCollect();
@@ -995,9 +1049,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
           }
 
           if (checkRectOverlap(playerRef.current, enemy)) {
-              addTrauma(SHAKE_INTENSITY.LARGE);
-              audioManager.playHurt();
-              setGameStateRef.current(GameState.GAME_OVER);
+             triggerPlayerDeath();
           }
       });
   };
@@ -1033,10 +1085,8 @@ const GameRenderer: React.FC<GameRendererProps> = ({
         cameraYRef.current += (targetY - cameraYRef.current) * 0.1;
     }
 
-    if (player.y > cameraYRef.current + CANVAS_HEIGHT + 50) {
-        addTrauma(SHAKE_INTENSITY.LARGE);
-        audioManager.playHurt();
-        setGameStateRef.current(GameState.GAME_OVER);
+    if (player.y > cameraYRef.current + CANVAS_HEIGHT + 50 && player.state !== 'die') {
+        triggerPlayerDeath();
     }
     
     const currentAlt = Math.floor(Math.abs(Math.min(0, player.y)) / TILE_SIZE);
@@ -1200,11 +1250,40 @@ const GameRenderer: React.FC<GameRendererProps> = ({
       ctx.globalAlpha = 1;
   };
 
+  const drawCombo = (ctx: CanvasRenderingContext2D) => {
+      if (comboRef.current.timer > 0 && comboRef.current.count > 1) {
+          ctx.save();
+          const scale = 1 + (comboRef.current.timer / 120) * 0.2;
+          ctx.translate(CANVAS_WIDTH - 20, 100);
+          ctx.scale(scale, scale);
+          ctx.rotate(-0.2);
+          ctx.textAlign = 'right';
+          
+          ctx.font = 'bold 30px "Press Start 2P", monospace';
+          ctx.fillStyle = '#fbbf24';
+          ctx.fillText(`${comboRef.current.count}x`, 0, 0);
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = '#78350f';
+          ctx.strokeText(`${comboRef.current.count}x`, 0, 0);
+          
+          ctx.font = 'bold 10px monospace';
+          ctx.fillStyle = 'white';
+          ctx.fillText(`MULTIPLIER`, 0, 15);
+          
+          ctx.restore();
+      }
+  };
+
   const drawPlayer = (ctx: CanvasRenderingContext2D, p: Entity) => {
     ctx.save();
     const cx = p.x + p.width / 2;
     const cy = p.y + p.height / 2;
     ctx.translate(Math.floor(cx), Math.floor(cy));
+    
+    // Death Rotation
+    if (p.state === 'die') {
+        ctx.rotate(p.rotation || 0);
+    }
 
     if (!p.facingRight) ctx.scale(-1, 1);
 
@@ -1315,11 +1394,20 @@ const GameRenderer: React.FC<GameRendererProps> = ({
     }
     ctx.fill();
 
-    ctx.fillStyle = 'rgba(244, 63, 94, 0.3)';
-    ctx.beginPath();
-    ctx.arc(4, 3, 2, 0, Math.PI*2);
-    ctx.arc(-4, 3, 2, 0, Math.PI*2);
-    ctx.fill();
+    // Death eyes
+    if (p.state === 'die') {
+         ctx.strokeStyle = '#0f172a';
+         ctx.lineWidth = 1.5;
+         ctx.beginPath(); ctx.moveTo(-3, -1); ctx.lineTo(1, 3); ctx.moveTo(1, -1); ctx.lineTo(-3, 3); ctx.stroke();
+         ctx.beginPath(); ctx.moveTo(3, -1); ctx.lineTo(7, 3); ctx.moveTo(7, -1); ctx.lineTo(3, 3); ctx.stroke();
+    } else {
+         ctx.fillStyle = 'rgba(244, 63, 94, 0.3)';
+         ctx.beginPath();
+         ctx.arc(4, 3, 2, 0, Math.PI*2);
+         ctx.arc(-4, 3, 2, 0, Math.PI*2);
+         ctx.fill();
+    }
+
     ctx.restore();
   };
 
@@ -1608,43 +1696,58 @@ const GameRenderer: React.FC<GameRendererProps> = ({
     if (!ctx) return;
 
     if (gameState === GameState.PLAYING) {
-        updatePhysics(16);
-        updateCamera();
-        updateEnemies();
-
-        // Update Particles
-        for (let i = particlesRef.current.length - 1; i >= 0; i--) {
-            const p = particlesRef.current[i];
-            p.x += p.vx;
-            p.y += p.vy;
-            if (p.gravity > 0) p.vy += p.gravity;
+        // HIT STOP: Skip physics updates if frozen
+        if (hitStopRef.current > 0) {
+             hitStopRef.current--;
+             // Shake maintains through freeze for extra impact
+        } else {
+            updatePhysics(16);
+            updateCamera();
+            updateEnemies();
             
-            // Simple floor bounce
-            if (p.bounce) {
-                 for (const block of mapRef.current) {
-                     if (p.x > block.x && p.x < block.x + block.width && p.y > block.y && p.y < block.y + block.height) {
-                         p.y = block.y;
-                         p.vy *= -0.5;
-                         p.vx *= 0.8;
-                         break;
-                     }
-                 }
-            } else {
-                p.vy += 0.1;
+            // Combo Timer
+            if (comboRef.current.timer > 0) {
+                comboRef.current.timer--;
+                if (comboRef.current.timer <= 0) {
+                    comboRef.current.count = 0;
+                    comboRef.current.multiplier = 1;
+                }
             }
 
-            p.rotation += p.rotSpeed;
-            p.life -= 0.015;
-            if (p.life <= 0) particlesRef.current.splice(i, 1);
-        }
+            // Update Particles
+            for (let i = particlesRef.current.length - 1; i >= 0; i--) {
+                const p = particlesRef.current[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                if (p.gravity > 0) p.vy += p.gravity;
+                
+                // Simple floor bounce
+                if (p.bounce) {
+                     for (const block of mapRef.current) {
+                         if (p.x > block.x && p.x < block.x + block.width && p.y > block.y && p.y < block.y + block.height) {
+                             p.y = block.y;
+                             p.vy *= -0.5;
+                             p.vx *= 0.8;
+                             break;
+                         }
+                     }
+                } else {
+                    p.vy += 0.1;
+                }
 
-        // Update Floating Texts
-        for (let i = floatingTextsRef.current.length - 1; i >= 0; i--) {
-            const ft = floatingTextsRef.current[i];
-            ft.x += ft.vx;
-            ft.y += ft.vy;
-            ft.life -= 0.02;
-            if (ft.life <= 0) floatingTextsRef.current.splice(i, 1);
+                p.rotation += p.rotSpeed;
+                p.life -= 0.015;
+                if (p.life <= 0) particlesRef.current.splice(i, 1);
+            }
+
+            // Update Floating Texts
+            for (let i = floatingTextsRef.current.length - 1; i >= 0; i--) {
+                const ft = floatingTextsRef.current[i];
+                ft.x += ft.vx;
+                ft.y += ft.vy;
+                ft.life -= 0.02;
+                if (ft.life <= 0) floatingTextsRef.current.splice(i, 1);
+            }
         }
     }
 
@@ -1664,6 +1767,8 @@ const GameRenderer: React.FC<GameRendererProps> = ({
 
     ctx.translate(0, -cameraYRef.current);
     
+    drawCombo(ctx);
+
     // Draw Boss (Behind blocks sometimes?)
     drawBoss(ctx);
 

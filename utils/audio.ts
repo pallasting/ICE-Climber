@@ -1,4 +1,5 @@
 
+
 // Simple 8-bit Retro Sound Synthesizer using Web Audio API
 class AudioManager {
   ctx: AudioContext | null = null;
@@ -11,6 +12,12 @@ class AudioManager {
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.value = 0.3; // Master volume
     this.masterGain.connect(this.ctx.destination);
+  }
+
+  vibrate(ms: number) {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(ms);
+    }
   }
 
   playTone(freq: number, type: OscillatorType, duration: number, vol: number = 1) {
@@ -96,6 +103,7 @@ class AudioManager {
 
   playHurt() {
     if (!this.ctx) return;
+    this.vibrate(200);
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = 'sawtooth';
@@ -146,6 +154,7 @@ class AudioManager {
 
   playEnemyHit() {
     if (!this.ctx || !this.masterGain) return;
+    this.vibrate(50);
     // Low crunchy impact
     const t = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();

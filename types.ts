@@ -62,12 +62,13 @@ export interface Entity extends Point, Velocity {
   isGrounded: boolean;
   lastGroundedTime: number; // For Coyote Time
   facingRight: boolean;
-  state: 'idle' | 'run' | 'jump' | 'hit' | 'fall' | 'build';
+  state: 'idle' | 'run' | 'jump' | 'hit' | 'fall' | 'build' | 'die';
   hitCooldown: number;
   // Combat State
   isAttacking: boolean;
   attackTimer: number; // How long hitbox is active
   attackCooldown: number;
+  rotation?: number; // For death animation
 }
 
 export interface Enemy extends Entity {
@@ -77,7 +78,7 @@ export interface Enemy extends Entity {
   spawnY: number; // Reference Y for flying enemies
   isDead: boolean;
   // AI State
-  state: 'idle' | 'run' | 'jump' | 'hit' | 'fall' | 'build';
+  state: 'idle' | 'run' | 'jump' | 'hit' | 'fall' | 'build' | 'die';
   buildTimer: number;
 }
 
@@ -140,6 +141,12 @@ export interface Snowflake {
   size: number;
   opacity: number;
   wobble: number;
+}
+
+export interface ComboState {
+  count: number;
+  timer: number;
+  multiplier: number;
 }
 
 export interface GameConfig {
