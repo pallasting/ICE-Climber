@@ -83,7 +83,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
       isAttacking: false,
       attackTimer: 0,
       attackCooldown: 0
-  });
+    });
   
   const projectilesRef = useRef<Projectile[]>([]);
 
@@ -109,7 +109,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
   };
   
   const triggerPlayerDeath = (player: Entity) => {
-      if (player.state === 'die') return;
+      if (player.state === 'die' || player.state === 'ghost') return;
       player.state = 'die';
       player.vy = -12; // Pop up
       player.isGrounded = false;
@@ -449,8 +449,9 @@ const GameRenderer: React.FC<GameRendererProps> = ({
         let biomeName = "ICE CAVERN";
         if (biome === BiomeType.BLIZZARD) biomeName = "DEATH ZONE";
         if (biome === BiomeType.AURORA) biomeName = "AURORA PEAK";
-        spawnFloatingText(CANVAS_WIDTH/2, cameraYRef.current + CANVAS_HEIGHT/2, `ENTERING ${biomeName}`, '#fff', 30);
+        spawnFloatingText(CANVAS_WIDTH/2, cameraYRef.current + CANVAS_HEIGHT/2 - 100, `ENTERING ${biomeName}`, '#fff', 30);
         addTrauma(SHAKE_INTENSITY.MEDIUM);
+        audioManager.playSelect();
     }
     
     let windForce = 0;
@@ -473,10 +474,43 @@ const GameRenderer: React.FC<GameRendererProps> = ({
             player.rotation = (player.rotation || 0) + 0.2;
             // Off screen check
             if (player.y > cameraYRef.current + CANVAS_HEIGHT + 300) {
-                // Permanently dead for this run segment
+                 // Permanently dead, switch to ghost if multiplayer or game over if single
+                 if (isMultiplayer) {
+                     player.state = 'ghost';
+                     player.vy = 0;
+                     player.x = cameraYRef.current + CANVAS_WIDTH/2;
+                     player.y = cameraYRef.current + CANVAS_HEIGHT - 100;
+                 }
             } else {
                 // Still falling
             }
+            return;
+        }
+
+        if (player.state === 'ghost') {
+            allDead = false; // Ghost counts as "not all dead" for game over logic in MP, wait... no. At least one must be alive.
+            // Ghost Physics
+            player.vx *= 0.9; player.vy *= 0.9;
+            const speed = 4;
+            let inputX = 0; let inputY = 0;
+             if (idx === 0) {
+                if (keysPressed.current['KeyA']) inputX = -1;
+                if (keysPressed.current['KeyD']) inputX = 1;
+                if (keysPressed.current['KeyW']) inputY = -1;
+                if (keysPressed.current['KeyS']) inputY = 1;
+            } else {
+                if (keysPressed.current['ArrowLeft']) inputX = -1;
+                if (keysPressed.current['ArrowRight']) inputX = 1;
+                if (keysPressed.current['ArrowUp']) inputY = -1;
+                if (keysPressed.current['ArrowDown']) inputY = 1;
+            }
+            player.vx += inputX * 0.5; player.vy += inputY * 0.5;
+            player.x += player.vx; player.y += player.vy;
+            
+            // Constrain ghost to screen
+            if (player.x < 0) player.x = 0; if (player.x > CANVAS_WIDTH) player.x = CANVAS_WIDTH;
+            if (player.y < cameraYRef.current) player.y = cameraYRef.current; 
+            if (player.y > cameraYRef.current + CANVAS_HEIGHT) player.y = cameraYRef.current + CANVAS_HEIGHT;
             return;
         }
         
@@ -709,7 +743,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
     // --- Boss Logic (Shared) ---
     const boss = bossRef.current;
     // Find closest player for boss aggro/aim
-    let closestPlayer = playersRef.current.find(p => p.state !== 'die');
+    let closestPlayer = playersRef.current.find(p => p.state !== 'die' && p.state !== 'ghost');
     if (!closestPlayer) closestPlayer = playersRef.current[0];
 
     const bossArenaY = -BOSS_CONFIG.LEVEL * TILE_SIZE * 4;
@@ -729,7 +763,9 @@ const GameRenderer: React.FC<GameRendererProps> = ({
         if (newPhase !== boss.phase) {
              boss.phase = newPhase;
              spawnParticles(boss.x + boss.width/2, boss.y + boss.height/2, boss.color);
-             addTrauma(SHAKE_INTENSITY.MEDIUM);
+             // Bigger particles for phase up
+             spawnParticles(boss.x + boss.width/2, boss.y + boss.height/2, '#ffffff');
+             addTrauma(SHAKE_INTENSITY.LARGE);
              spawnFloatingText(boss.x + boss.width/2, boss.y + boss.height, "PHASE UP!", "#fff", 20);
         }
 
@@ -758,6 +794,10 @@ const GameRenderer: React.FC<GameRendererProps> = ({
                     hitCooldown: 0, isAttacking: false, attackTimer: 0, attackCooldown: 0, isReflected: false, damage: 1, rotation: 0
                 });
             };
+            
+            // Shake on firing if phase 2 (berserk)
+            if (boss.phase === 2) addTrauma(0.1);
+
             const aimVx = (closestPlayer.x - (boss.x + boss.width/2)) * 0.02;
             if (boss.phase === 0) spawnProjectile(aimVx, 5);
             else if (boss.phase === 1) { spawnProjectile(aimVx - 2, 5); spawnProjectile(aimVx + 2, 5); }
@@ -794,7 +834,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
              }
         } else {
              playersRef.current.forEach(pl => {
-                 if (pl.state !== 'die' && checkRectOverlap(p, pl)) triggerPlayerDeath(pl);
+                 if (pl.state !== 'die' && pl.state !== 'ghost' && checkRectOverlap(p, pl)) triggerPlayerDeath(pl);
              });
         }
         if (p.y > cameraYRef.current + CANVAS_HEIGHT || p.y < cameraYRef.current - 1000) projectilesRef.current.splice(i, 1);
@@ -812,7 +852,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
 
   const updateEnemies = () => {
       // Find closest ALIVE player
-      const activePlayers = playersRef.current.filter(p => p.state !== 'die');
+      const activePlayers = playersRef.current.filter(p => p.state !== 'die' && p.state !== 'ghost');
       if (activePlayers.length === 0) return;
 
       enemiesRef.current.forEach((enemy) => {
@@ -830,8 +870,11 @@ const GameRenderer: React.FC<GameRendererProps> = ({
               enemy.x += enemy.vx;
               const distX = Math.abs((target.x + target.width/2) - (enemy.x + enemy.width/2));
               const distY = target.y - enemy.y; 
+              
+              // Only aggro if visible on screen to avoid cheap off-screen dives
+              const isVisible = enemy.y > cameraYRef.current && enemy.y < cameraYRef.current + CANVAS_HEIGHT;
 
-              if (distX < target.width && distY > 0 && distY < 300 && !enemy.aggro) {
+              if (distX < target.width && distY > 0 && distY < 300 && !enemy.aggro && isVisible) {
                   enemy.aggro = true; 
               }
 
@@ -923,11 +966,11 @@ const GameRenderer: React.FC<GameRendererProps> = ({
 
   const updateCamera = () => {
     // Follow the HIGHEST alive player (lowest Y)
-    const activePlayers = playersRef.current.filter(p => p.state !== 'die');
+    const activePlayers = playersRef.current.filter(p => p.state !== 'die' && p.state !== 'ghost');
     
     // Check for Screen Kill (players below camera)
     playersRef.current.forEach(p => {
-        if (p.state !== 'die' && p.y > cameraYRef.current + CANVAS_HEIGHT + 20) {
+        if (p.state !== 'die' && p.state !== 'ghost' && p.y > cameraYRef.current + CANVAS_HEIGHT + 20) {
             triggerPlayerDeath(p);
             spawnFloatingText(p.x, cameraYRef.current + CANVAS_HEIGHT - 50, "TOO SLOW!", p.color, 16);
         }
@@ -978,7 +1021,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
             
             // REVIVE DEAD PLAYERS
             playersRef.current.forEach((p, i) => {
-                if (p.state === 'die') {
+                if (p.state === 'die' || p.state === 'ghost') {
                     p.state = 'idle';
                     p.vx = 0; p.vy = 0;
                     p.x = CANVAS_WIDTH / 2;
@@ -1106,8 +1149,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
 
   const drawPlayer = (ctx: CanvasRenderingContext2D, p: Entity, idx: number) => {
     if (p.state === 'die') {
-         // Optionally draw ghost or falling body
-         // For now keep falling body
+         // Keep falling body
     }
     
     ctx.save();
@@ -1116,6 +1158,13 @@ const GameRenderer: React.FC<GameRendererProps> = ({
     ctx.translate(Math.floor(cx), Math.floor(cy));
     
     if (p.state === 'die') ctx.rotate(p.rotation || 0);
+
+    // Ghost visual
+    if (p.state === 'ghost') {
+        ctx.globalAlpha = 0.5;
+        const hover = Math.sin(Date.now() / 200) * 5;
+        ctx.translate(0, hover);
+    }
 
     if (!p.facingRight) ctx.scale(-1, 1);
 
@@ -1132,6 +1181,16 @@ const GameRenderer: React.FC<GameRendererProps> = ({
     const skin = colors.skin;
     const hammerWood = '#78350f';
     const hammerIron = '#64748b';
+
+    // Wings (Featherweight)
+    if (upgrades[UpgradeType.FEATHERWEIGHT]) {
+        ctx.save();
+        ctx.translate(-10, -5);
+        ctx.rotate(Math.sin(t * 0.01) * 0.2);
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.ellipse(0, 0, 6, 12, -0.5, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+    }
 
     ctx.save();
     let armAngle = isRun ? -Math.PI/4 + runCycle * 0.5 : -Math.PI/4;
@@ -1158,6 +1217,13 @@ const GameRenderer: React.FC<GameRendererProps> = ({
     ctx.fillStyle = '#1e293b'; 
     if (isJump) { ctx.fillRect(-8, 12, 6, 6); ctx.fillRect(2, 10, 6, 6); } 
     else { ctx.fillRect(-8 - runCycle * 3, 14, 6, 6); ctx.fillRect(2 + runCycle * 3, 14, 6, 6); }
+
+    // Spiked Boots Visual
+    if (upgrades[UpgradeType.SPIKED_BOOTS]) {
+         ctx.fillStyle = '#94a3b8';
+         if (isJump) { ctx.fillRect(-8, 18, 6, 2); ctx.fillRect(2, 16, 6, 2); }
+         else { ctx.fillRect(-8 - runCycle * 3, 20, 6, 2); ctx.fillRect(2 + runCycle * 3, 20, 6, 2); }
+    }
 
     ctx.translate(0, -bounce);
     ctx.fillStyle = parkaMain;

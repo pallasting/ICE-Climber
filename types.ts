@@ -63,7 +63,7 @@ export interface Entity extends Point, Velocity {
   isGrounded: boolean;
   lastGroundedTime: number; // For Coyote Time
   facingRight: boolean;
-  state: 'idle' | 'run' | 'jump' | 'hit' | 'fall' | 'build' | 'die';
+  state: 'idle' | 'run' | 'jump' | 'hit' | 'fall' | 'build' | 'die' | 'ghost';
   hitCooldown: number;
   // Combat State
   isAttacking: boolean;
