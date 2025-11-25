@@ -22,6 +22,21 @@ export const PHYSICS: GameConfig = {
 
 export const PLAYER_SIZE = { width: 24, height: 38 };
 
+export const PLAYER_COLORS = [
+    {
+        main: '#3b82f6', // Blue (Popo)
+        glow: '#60a5fa',
+        skin: '#fda4af',
+        parkaDark: '#2563eb'
+    },
+    {
+        main: '#ec4899', // Pink (Nana)
+        glow: '#f472b6',
+        skin: '#fda4af',
+        parkaDark: '#db2777'
+    }
+];
+
 export const ENEMY_CONFIG = {
   YETI: {
     width: 30,
@@ -46,6 +61,14 @@ export const BOSS_CONFIG = {
   SPEED: 2,
   ATTACK_INTERVAL: 120, // Frames
   COLOR: '#818cf8'
+};
+
+export const BOSS_PHASES = {
+  P2_THRESHOLD: 0.6, // 60% HP
+  P3_THRESHOLD: 0.3, // 30% HP
+  P1_INTERVAL: 120,
+  P2_INTERVAL: 90,
+  P3_INTERVAL: 60,
 };
 
 export const PROJECTILE_CONFIG = {

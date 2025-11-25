@@ -56,6 +56,7 @@ export interface Velocity {
 }
 
 export interface Entity extends Point, Velocity {
+  id?: number; // Player ID (0 or 1)
   width: number;
   height: number;
   color: string;
@@ -80,6 +81,7 @@ export interface Enemy extends Entity {
   // AI State
   state: 'idle' | 'run' | 'jump' | 'hit' | 'fall' | 'build' | 'die';
   buildTimer: number;
+  aggro: boolean; // Threat state
 }
 
 export interface Boss extends Entity {
