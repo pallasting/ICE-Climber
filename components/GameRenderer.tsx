@@ -115,7 +115,6 @@ const GameRenderer: React.FC<GameRendererProps> = ({
       player.isGrounded = false;
       addTrauma(SHAKE_INTENSITY.LARGE);
       audioManager.playHurt();
-      // Only trigger GAME OVER if ALL players are dead
   };
 
   const spawnFloatingText = (x: number, y: number, text: string, color: string = 'white', size: number = 14) => {
@@ -369,6 +368,10 @@ const GameRenderer: React.FC<GameRendererProps> = ({
       opacity: 0.3 + Math.random() * 0.7,
       wobble: Math.random() * Math.PI * 2,
     }));
+    
+    // START BGM
+    audioManager.playBGM(BiomeType.ICE_CAVE);
+    
   }, [setBossStatus, playerCount]);
 
   useEffect(() => {
@@ -376,9 +379,23 @@ const GameRenderer: React.FC<GameRendererProps> = ({
       initGame();
     }
   }, [gameState, initGame]);
+  
+  // Cleanup Audio on unmount
+  useEffect(() => {
+      return () => audioManager.stopBGM();
+  }, []);
+
+  // Update Pause Filter
+  useEffect(() => {
+      audioManager.setPauseEffect(gameState === GameState.PAUSED || gameState === GameState.SHOP);
+  }, [gameState]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Escape') {
+          if (gameState === GameState.PLAYING) setGameStateRef.current(GameState.PAUSED);
+          else if (gameState === GameState.PAUSED) setGameStateRef.current(GameState.PLAYING);
+      }
       keysPressed.current[e.code] = true;
     };
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -390,7 +407,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [gameState]); // Add gameState dependency for ESC to work reliably
 
   const checkRectOverlap = (r1: {x: number, y: number, width: number, height: number}, r2: {x: number, y: number, width: number, height: number}) => {
     return (
@@ -437,13 +454,17 @@ const GameRenderer: React.FC<GameRendererProps> = ({
   };
 
   const updatePhysics = (dt: number) => {
-    // Loop through ALL players
-    let allDead = true;
+    let activeCount = 0;
+    let dyingCount = 0;
     
     // Environmental / Biome Logic (Shared)
     // Use Camera Y to determine general biome if players are dead or scattered
     const currentLevel = Math.floor(Math.abs(Math.min(0, cameraYRef.current)) / TILE_SIZE);
     const biome = getBiomeAtLevel(currentLevel);
+    
+    // BGM Switching
+    audioManager.playBGM(biome);
+
     if (biome !== lastBiomeRef.current) {
         lastBiomeRef.current = biome;
         let biomeName = "ICE CAVERN";
@@ -468,6 +489,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
     // --- PLAYER LOOP ---
     playersRef.current.forEach((player, idx) => {
         if (player.state === 'die') {
+            dyingCount++;
             player.vy += PHYSICS.gravity;
             player.y += player.vy;
             player.x += player.vx;
@@ -480,15 +502,15 @@ const GameRenderer: React.FC<GameRendererProps> = ({
                      player.vy = 0;
                      player.x = cameraYRef.current + CANVAS_WIDTH/2;
                      player.y = cameraYRef.current + CANVAS_HEIGHT - 100;
+                 } else {
+                     // Single player falling off screen - mark as done dying to trigger game over
+                     dyingCount--;
                  }
-            } else {
-                // Still falling
             }
             return;
         }
 
         if (player.state === 'ghost') {
-            allDead = false; // Ghost counts as "not all dead" for game over logic in MP, wait... no. At least one must be alive.
             // Ghost Physics
             player.vx *= 0.9; player.vy *= 0.9;
             const speed = 4;
@@ -514,7 +536,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
             return;
         }
         
-        allDead = false;
+        activeCount++;
 
         const activeFriction = player.isGrounded ? (upgrades[UpgradeType.SPIKED_BOOTS] ? 0.7 : PHYSICS.friction) : PHYSICS.airFriction;
         const activeGravity = upgrades[UpgradeType.FEATHERWEIGHT] ? PHYSICS.gravity * 0.7 : PHYSICS.gravity;
@@ -734,7 +756,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
         }
     }); // End Player Loop
 
-    if (allDead) {
+    if (activeCount === 0 && dyingCount === 0) {
         setGameStateRef.current(GameState.GAME_OVER);
     }
 
@@ -1443,6 +1465,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
 
     ctx.save();
     
+    // Draw everything even if paused
     const shakeC = traumaRef.current * traumaRef.current; 
     const shakeMag = shakeC * 15; 
     const shakeX = (Math.random() - 0.5) * shakeMag; const shakeY = (Math.random() - 0.5) * shakeMag;

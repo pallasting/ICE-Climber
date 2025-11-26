@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import GameRenderer from './components/GameRenderer';
 import { GameState, BiomeType, Upgrades, UpgradeType } from './types';
 import { UPGRADE_CONFIG } from './constants';
-import { Activity, Zap, Trophy, Mountain, Snowflake, Wind, Crown, Flame, ShoppingBag, Play, ShieldAlert, Users, User } from 'lucide-react';
+import { Activity, Zap, Trophy, Mountain, Snowflake, Wind, Crown, Flame, ShoppingBag, Play, ShieldAlert, Users, User, Pause, Volume2, VolumeX, LogOut } from 'lucide-react';
 import { audioManager } from './utils/audio';
 
 const App: React.FC = () => {
@@ -17,6 +17,7 @@ const App: React.FC = () => {
   const [altitude, setAltitude] = useState(0);
   const [biome, setBiome] = useState<string>(BiomeType.ICE_CAVE);
   const [gameId, setGameId] = useState(0); 
+  const [isMuted, setIsMuted] = useState(false);
   
   // Upgrades State
   const [upgrades, setUpgrades] = useState<Upgrades>({
@@ -74,6 +75,16 @@ const App: React.FC = () => {
         safeSetItem('icebreaker_maxalt', altitude.toString());
       }
     }
+  };
+
+  const toggleMute = () => {
+      const muted = audioManager.toggleMute();
+      setIsMuted(muted);
+  };
+  
+  const togglePause = () => {
+      if (gameState === GameState.PLAYING) setGameState(GameState.PAUSED);
+      else if (gameState === GameState.PAUSED) setGameState(GameState.PLAYING);
   };
 
   const startGame = (count: number) => {
@@ -154,12 +165,6 @@ const App: React.FC = () => {
                     </div>
                 )}
             </div>
-            
-            <div className="flex items-center gap-1.5 opacity-70">
-                <Crown size={10} className="text-yellow-400" />
-                <span className="text-[8px] sm:text-[10px] uppercase tracking-widest font-bold text-yellow-400">Best</span>
-                <span className="text-[10px] sm:text-xs font-mono text-white">{highScore.toString().padStart(6, '0')}</span>
-            </div>
           </div>
           
           {/* Center: Biome & Heat */}
@@ -174,17 +179,25 @@ const App: React.FC = () => {
              </div>
           </div>
 
-          {/* Right: Altitude */}
-          <div className="flex flex-col items-end gap-1">
+          {/* Right: Controls & Altitude */}
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+                 <button onClick={toggleMute} className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+                     {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                 </button>
+                 {(gameState === GameState.PLAYING || gameState === GameState.PAUSED) && (
+                     <button onClick={togglePause} className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+                         {gameState === GameState.PAUSED ? <Play size={14} /> : <Pause size={14} />}
+                     </button>
+                 )}
+            </div>
+            
             <div className="flex flex-col items-end">
-                <div className="text-[8px] sm:text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-0.5">Altitude</div>
                 <div className="flex items-center gap-1 text-emerald-400 leading-none">
                     <Mountain size={14} className="sm:w-[18px] sm:h-[18px]" />
                     <span className="text-lg sm:text-2xl font-mono">{altitude}m</span>
                 </div>
-            </div>
-            <div className="text-[8px] sm:text-[10px] font-mono text-slate-500">
-                MAX: {maxAltRecord}m
+                <div className="text-[8px] sm:text-[10px] font-mono text-slate-500">MAX: {maxAltRecord}m</div>
             </div>
           </div>
         </div>
@@ -258,6 +271,27 @@ const App: React.FC = () => {
                   P2: ARROWS / UP / ENTER
               </div>
             </div>
+          )}
+
+          {/* PAUSE Overlay */}
+          {gameState === GameState.PAUSED && (
+             <div className="absolute inset-0 bg-slate-900/60 flex flex-col items-center justify-center z-40 backdrop-blur-sm">
+                 <div className="bg-black/80 p-8 rounded-2xl border border-white/10 text-center flex flex-col gap-4">
+                     <h2 className="text-2xl font-bold text-white tracking-widest uppercase">Paused</h2>
+                     <button 
+                        onClick={resumeGame}
+                        className="px-6 py-3 bg-white text-black font-bold uppercase rounded-full hover:bg-cyan-100 flex items-center justify-center gap-2"
+                     >
+                        <Play size={18} fill="currentColor" /> Resume
+                     </button>
+                     <button 
+                        onClick={() => setGameState(GameState.MENU)}
+                        className="px-6 py-3 bg-transparent border border-white/20 text-white font-bold uppercase rounded-full hover:bg-white/10 flex items-center justify-center gap-2"
+                     >
+                        <LogOut size={18} /> Quit
+                     </button>
+                 </div>
+             </div>
           )}
 
           {/* SHOP Overlay */}

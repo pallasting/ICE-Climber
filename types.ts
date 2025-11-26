@@ -17,6 +17,7 @@ export enum BiomeType {
 export enum GameState {
   MENU = 'MENU',
   PLAYING = 'PLAYING',
+  PAUSED = 'PAUSED', // Added PAUSED state
   GAME_OVER = 'GAME_OVER',
   VICTORY = 'VICTORY',
   SHOP = 'SHOP',
