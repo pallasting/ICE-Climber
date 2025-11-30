@@ -10,6 +10,7 @@ class AudioManager {
   filterNode: BiquadFilterNode | null = null; // For pause effect
 
   isMuted: boolean = false;
+  masterVolume: number = 0.5; // Default volume (0.0 to 1.0)
   
   // BGM State
   currentBiome: BiomeType | null = null;
@@ -32,17 +33,17 @@ class AudioManager {
     
     // Create Nodes
     this.masterGain = this.ctx.createGain();
-    this.masterGain.gain.value = 0.3;
+    this.masterGain.gain.value = this.isMuted ? 0 : this.masterVolume;
     
     this.filterNode = this.ctx.createBiquadFilter();
     this.filterNode.type = 'lowpass';
     this.filterNode.frequency.value = 22000; // Open filter initially
 
     this.bgmGain = this.ctx.createGain();
-    this.bgmGain.gain.value = 0.4;
+    this.bgmGain.gain.value = 0.6; // Boosted BGM mix
 
     this.sfxGain = this.ctx.createGain();
-    this.sfxGain.gain.value = 0.6;
+    this.sfxGain.gain.value = 0.8; // Boosted SFX mix
 
     // Connect Graph: Sources -> Gains -> Filter -> Master -> Destination
     this.bgmGain.connect(this.filterNode);
@@ -51,10 +52,31 @@ class AudioManager {
     this.masterGain.connect(this.ctx.destination);
   }
 
+  setVolume(value: number) {
+      this.masterVolume = Math.max(0, Math.min(1, value));
+      if (this.masterGain) {
+          // If muted, we update the stored volume but keep gain at 0
+          // If unmuted, we apply the new volume immediately
+          if (!this.isMuted) {
+             this.masterGain.gain.setTargetAtTime(this.masterVolume, this.ctx!.currentTime, 0.1);
+          }
+      }
+      // If user drags slider while muted, we assume they want to hear it, so unmute
+      if (this.isMuted && value > 0) {
+          this.isMuted = false;
+          if (this.masterGain) {
+             this.masterGain.gain.setTargetAtTime(this.masterVolume, this.ctx!.currentTime, 0.1);
+          }
+          return false; // Return false to indicate it is NOT muted anymore
+      }
+      return this.isMuted;
+  }
+
   toggleMute() {
       this.isMuted = !this.isMuted;
-      if (this.masterGain) {
-          this.masterGain.gain.setTargetAtTime(this.isMuted ? 0 : 0.3, this.ctx!.currentTime, 0.1);
+      if (this.masterGain && this.ctx) {
+          const target = this.isMuted ? 0 : this.masterVolume;
+          this.masterGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.1);
       }
       return this.isMuted;
   }

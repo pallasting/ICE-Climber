@@ -18,6 +18,7 @@ const App: React.FC = () => {
   const [biome, setBiome] = useState<string>(BiomeType.ICE_CAVE);
   const [gameId, setGameId] = useState(0); 
   const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(50);
   
   // Upgrades State
   const [upgrades, setUpgrades] = useState<Upgrades>({
@@ -80,6 +81,18 @@ const App: React.FC = () => {
   const toggleMute = () => {
       const muted = audioManager.toggleMute();
       setIsMuted(muted);
+      if (!muted) {
+          setVolume(Math.floor(audioManager.masterVolume * 100));
+      } else {
+          setVolume(0);
+      }
+  };
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = parseInt(e.target.value);
+      setVolume(val);
+      const isStillMuted = audioManager.setVolume(val / 100);
+      setIsMuted(isStillMuted);
   };
   
   const togglePause = () => {
@@ -182,11 +195,24 @@ const App: React.FC = () => {
           {/* Right: Controls & Altitude */}
           <div className="flex flex-col items-end gap-2">
             <div className="flex items-center gap-2">
-                 <button onClick={toggleMute} className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-                     {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-                 </button>
+                 {/* Volume Control - Expandable Pill */}
+                 <div className="group flex items-center bg-white/5 hover:bg-white/10 border border-white/5 rounded-full p-1.5 transition-all duration-300">
+                     <button onClick={toggleMute} className="text-slate-300 hover:text-cyan-400 transition-colors">
+                         {isMuted || volume === 0 ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                     </button>
+                     <div className="w-0 overflow-hidden group-hover:w-20 transition-all duration-300 flex items-center">
+                         <input 
+                            type="range" 
+                            min="0" max="100" 
+                            value={isMuted ? 0 : volume} 
+                            onChange={handleVolumeChange}
+                            className="w-16 h-1 ml-2 bg-white/20 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-cyan-400 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:bg-white"
+                         />
+                     </div>
+                 </div>
+
                  {(gameState === GameState.PLAYING || gameState === GameState.PAUSED) && (
-                     <button onClick={togglePause} className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+                     <button onClick={togglePause} className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 transition-colors border border-white/5">
                          {gameState === GameState.PAUSED ? <Play size={14} /> : <Pause size={14} />}
                      </button>
                  )}

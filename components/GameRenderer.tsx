@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useCallback } from 'react';
 import { 
   CANVAS_WIDTH, CANVAS_HEIGHT, TILE_SIZE, PHYSICS, COLORS, 
   COLS, PLAYER_SIZE, ENEMY_CONFIG, BIOME_CONFIG, ITEM_CONFIG, SHAKE_INTENSITY,
-  BOSS_CONFIG, PROJECTILE_CONFIG, CLOUD_CONFIG, BOSS_PHASES, PLAYER_COLORS
+  BOSS_CONFIG, PROJECTILE_CONFIG, CLOUD_CONFIG, BOSS_PHASES, PLAYER_COLORS, DIFFICULTY
 } from '../constants';
 import { 
   Block, BlockType, Entity, GameState, Particle, Snowflake, 
@@ -82,7 +82,8 @@ const GameRenderer: React.FC<GameRendererProps> = ({
       hitCooldown: 0,
       isAttacking: false,
       attackTimer: 0,
-      attackCooldown: 0
+      attackCooldown: 0,
+      level: BOSS_CONFIG.LEVEL
     });
   
   const projectilesRef = useRef<Projectile[]>([]);
@@ -146,7 +147,26 @@ const GameRenderer: React.FC<GameRendererProps> = ({
     const newBlocks: Block[] = [];
     const isFloor = level === 0;
     
-    if (level === BOSS_CONFIG.LEVEL) {
+    // Check for Boss Level (19, 39, 59...)
+    const isBossArena = (level + 1) % 20 === 0 && level > 0;
+    // Check for Shop/Transition Level (20, 40, 60...)
+    const isShopLevel = level % 20 === 0 && level > 0;
+
+    if (isBossArena) {
+         // Recursive Boss Logic: Update boss position/stats if this is a new encounter
+         if (bossRef.current.level < level) {
+             const encounterCount = Math.floor(level / 20);
+             const hpMult = Math.pow(DIFFICULTY.BOSS_HP_MULT, encounterCount);
+             const speedMult = Math.pow(DIFFICULTY.BOSS_SPEED_MULT, encounterCount);
+             
+             bossRef.current.level = level;
+             bossRef.current.y = rowY - 300;
+             bossRef.current.isActive = false;
+             bossRef.current.maxHp = Math.floor(BOSS_CONFIG.HP * hpMult);
+             bossRef.current.hp = bossRef.current.maxHp;
+             bossRef.current.vx = BOSS_CONFIG.SPEED * speedMult * (Math.random() > 0.5 ? 1 : -1);
+         }
+
          for (let x = 0; x < COLS; x++) {
             newBlocks.push({
                 id: `arena-${x}-${rowY}`,
@@ -162,7 +182,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
          return newBlocks;
     }
 
-    if (level === BOSS_CONFIG.LEVEL + 1) {
+    if (isShopLevel) {
         newBlocks.push({
           id: `w-0-${rowY}`,
           x: 0,
@@ -252,8 +272,14 @@ const GameRenderer: React.FC<GameRendererProps> = ({
                 const enemyType = Math.random() > 0.6 ? EnemyType.YETI : EnemyType.BIRD; 
                 const config = ENEMY_CONFIG[enemyType];
                 const spawnY = rowY - config.height;
+                
+                // Dynamic Speed Scaling
+                const speedMult = 1 + (level * DIFFICULTY.ENEMY_SPEED_SCALING);
+
                 enemiesRef.current.push({
-                    x: col * TILE_SIZE, y: spawnY, vx: config.speed, vy: 0, width: config.width, height: config.height, color: config.color, isGrounded: false, lastGroundedTime: 0, facingRight: true, state: 'run', hitCooldown: 0, type: enemyType, patrolStart: 0, patrolEnd: CANVAS_WIDTH, spawnY: spawnY, isDead: false, isAttacking: false, attackTimer: 0, attackCooldown: 0, buildTimer: 0, aggro: false
+                    x: col * TILE_SIZE, y: spawnY, 
+                    vx: config.speed * speedMult, 
+                    vy: 0, width: config.width, height: config.height, color: config.color, isGrounded: false, lastGroundedTime: 0, facingRight: true, state: 'run', hitCooldown: 0, type: enemyType, patrolStart: 0, patrolEnd: CANVAS_WIDTH, spawnY: spawnY, isDead: false, isAttacking: false, attackTimer: 0, attackCooldown: 0, buildTimer: 0, aggro: false
                 });
             }
             continue;
@@ -309,7 +335,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
     }
     playersRef.current = newPlayers;
 
-    // Reset Boss
+    // Reset Boss - Starts at level 19
     bossRef.current = {
       x: CANVAS_WIDTH / 2 - BOSS_CONFIG.WIDTH / 2,
       y: -BOSS_CONFIG.LEVEL * TILE_SIZE * 4 - 300,
@@ -330,7 +356,8 @@ const GameRenderer: React.FC<GameRendererProps> = ({
       hitCooldown: 0,
       isAttacking: false,
       attackTimer: 0,
-      attackCooldown: 0
+      attackCooldown: 0,
+      level: BOSS_CONFIG.LEVEL
     };
 
     cameraYRef.current = 0;
@@ -768,11 +795,11 @@ const GameRenderer: React.FC<GameRendererProps> = ({
     let closestPlayer = playersRef.current.find(p => p.state !== 'die' && p.state !== 'ghost');
     if (!closestPlayer) closestPlayer = playersRef.current[0];
 
-    const bossArenaY = -BOSS_CONFIG.LEVEL * TILE_SIZE * 4;
+    const bossArenaY = -boss.level * TILE_SIZE * 4;
+    
     // Activate if any alive player is close
     if (!boss.isActive && closestPlayer.y < bossArenaY + CANVAS_HEIGHT) {
         boss.isActive = true;
-        boss.y = bossArenaY - 200; 
         setBossStatus({ active: true, hp: boss.hp, maxHp: boss.maxHp });
     }
 
@@ -791,7 +818,11 @@ const GameRenderer: React.FC<GameRendererProps> = ({
              spawnFloatingText(boss.x + boss.width/2, boss.y + boss.height, "PHASE UP!", "#fff", 20);
         }
 
-        let currentSpeed = BOSS_CONFIG.SPEED;
+        // Apply Difficulty Multiplier to Speed based on boss loop
+        const loopCount = Math.floor(boss.level / 20);
+        const speedMultiplier = Math.pow(DIFFICULTY.BOSS_SPEED_MULT, loopCount);
+
+        let currentSpeed = BOSS_CONFIG.SPEED * speedMultiplier;
         let currentAttackInterval = BOSS_PHASES.P1_INTERVAL;
 
         if (boss.phase === 1) { 
@@ -1037,6 +1068,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({
         setBiome(getBiomeAtLevel(currentAlt));
 
         // Shop / Revival Trigger
+        // Check for every 20 levels (e.g., 20, 40, 60...)
         if (currentAlt > 10 && currentAlt % 20 === 0 && currentAlt > lastShopLevelRef.current) {
             lastShopLevelRef.current = currentAlt;
             setGameStateRef.current(GameState.SHOP);

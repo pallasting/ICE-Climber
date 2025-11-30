@@ -37,6 +37,12 @@ export const PLAYER_COLORS = [
     }
 ];
 
+export const DIFFICULTY = {
+  ENEMY_SPEED_SCALING: 0.005, // Speed increase per level
+  BOSS_HP_MULT: 1.2,          // HP Multiplier per encounter
+  BOSS_SPEED_MULT: 1.1,       // Speed Multiplier per encounter
+};
+
 export const ENEMY_CONFIG = {
   YETI: {
     width: 30,
@@ -54,7 +60,7 @@ export const ENEMY_CONFIG = {
 };
 
 export const BOSS_CONFIG = {
-  LEVEL: 19,
+  LEVEL: 19, // Initial Level
   WIDTH: 80,
   HEIGHT: 80,
   HP: 300,

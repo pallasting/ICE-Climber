@@ -91,6 +91,7 @@ export interface Boss extends Entity {
   isActive: boolean;
   phase: number; // 0: Idle, 1: Attack
   moveTimer: number;
+  level: number; // Track which level encounter this is
 }
 
 export interface Projectile extends Entity {
